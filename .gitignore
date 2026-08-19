@@ -1,0 +1,9 @@
+# 本地构建产物
+dist/
+*.so
+*.dylib
+*.dll
+*.h
+
+# Codex 工作记录不随插件源码发布
+.codex/
