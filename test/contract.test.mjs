@@ -45,6 +45,7 @@ assert.equal(
 );
 
 assert.match(html, /request\(API_KEYS\)/);
+assert.match(html, /state\.key=value;try\{await load\(\)/);
 assert.match(html, /method:'PUT'/);
 assert.match(html, /method:'PATCH'/);
 assert.match(html, /method:'PUT',body:JSON\.stringify\(keys\)/);

@@ -314,7 +314,7 @@ const indexHTML = `<!doctype html>
   $('add').onclick=()=>openModal(-1);
   state.metadata={};
   connectIfStored();
-  async function connectIfStored(){if($('management-key').value)try{await load();}catch(error){status('已读取本地会话，但连接失败：'+error.message,'error');}}
+  async function connectIfStored(){const value=$('management-key').value.trim();if(!value)return;state.key=value;try{await load();}catch(error){status('已读取本地会话，但连接失败：'+error.message,'error');}}
 })();
 </script>
 </body>
