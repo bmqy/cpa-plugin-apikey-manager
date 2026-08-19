@@ -127,6 +127,7 @@ jobs:
           version="${version#v}"
           tag="v${version}"
           gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
             --generate-notes \
