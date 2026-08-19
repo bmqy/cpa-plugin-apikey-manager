@@ -34,7 +34,7 @@ jobs:
             goos: windows
             goarch: amd64
             extension: dll
-          - runner: macos-13
+          - runner: macos-15-intel
             goos: darwin
             goarch: amd64
             extension: dylib
