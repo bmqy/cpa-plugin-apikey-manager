@@ -175,7 +175,7 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 	case "management.register":
 		return okEnvelope(managementRegistration{
 			Resources: []managementResource{{
-				Path:        "/index.html",
+				Path:        "/dashboard",
 				Menu:        pluginName,
 				Description: "在 CLIProxyAPI 管理中心查看、添加、编辑和删除代理 API Key，并维护名称备注。",
 			}},
@@ -215,7 +215,8 @@ func handleManagement(raw []byte) ([]byte, error) {
 	}
 
 	path := strings.TrimSpace(request.Path)
-	if path == "" || path == "/" || path == "/index.html" {
+	resourcePath := "/v0/resource/plugins/" + pluginID + "/dashboard"
+	if path == "/dashboard" || path == resourcePath {
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusOK,
 			Headers:    http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
