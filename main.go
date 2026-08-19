@@ -272,7 +272,7 @@ const indexHTML = `<!doctype html>
 <p class="sub">管理 CLIProxyAPI 代理服务认证密钥，并为每个密钥维护名称和备注。</p>
 <section class="card">
   <h2>连接</h2>
-  <div class="auth"><div class="field"><label for="management-key">Management Key</label><input id="management-key" type="password" autocomplete="off" placeholder="输入 CLIProxyAPI 的管理密钥"><small>同源官方管理面板已记住密钥时会自动尝试读取；本页不会主动持久化你输入的密钥。</small></div><button id="connect">连接并加载</button></div>
+  <div class="auth"><div class="field"><label for="management-key">Management Key</label><input id="management-key" type="password" autocomplete="off" placeholder="输入 CLIProxyAPI 的管理密钥"><small>会读取同源官方管理面板已记住的会话密钥；本页不会主动持久化你输入的密钥。</small></div><button id="connect">连接并加载</button></div>
   <div id="status" class="status"></div>
 </section>
 <section class="card">
@@ -291,7 +291,11 @@ const indexHTML = `<!doctype html>
   const state={key:'',keys:[],metadata:{},editingIndex:-1,visible:{}};
   const $=id=>document.getElementById(id);
   const status=(message,type)=>{const el=$('status');el.textContent=message||'';el.className='status '+(type||'');};
-  const getStoredKey=()=>{for(const name of ['managementKey','management_key','cpa-management-key']){try{const value=localStorage.getItem(name);if(value&&value.trim())return value.replace(/^Bearer\s+/i,'').trim()}catch(_){}}return '';};
+  const AUTH_STORAGE='cli-proxy-auth';
+  const ENC_PREFIX='enc::v1::';
+  const STORAGE_SALT='cli-proxy-api-webui::secure-storage';
+  const decodeOfficialStorage=raw=>{if(!raw||!raw.startsWith(ENC_PREFIX))return raw;try{const encoded=atob(raw.slice(ENC_PREFIX.length));const key=new TextEncoder().encode(STORAGE_SALT+'|'+location.host+'|'+navigator.userAgent);const bytes=new Uint8Array(encoded.length);for(let index=0;index<encoded.length;index++)bytes[index]=encoded.charCodeAt(index)^key[index%key.length];return new TextDecoder().decode(bytes)}catch(_){return ''}};
+  const getStoredKey=()=>{try{const raw=localStorage.getItem(AUTH_STORAGE);if(raw){const parsed=JSON.parse(decodeOfficialStorage(raw));const saved=parsed&&typeof parsed==='object'&&parsed.state&&typeof parsed.state==='object'?parsed.state:parsed;const value=saved&&typeof saved.managementKey==='string'?saved.managementKey.trim():'';if(value)return value.replace(/^Bearer\s+/i,'').trim()}}catch(_){}for(const name of ['managementKey','management_key','cpa-management-key']){try{const value=localStorage.getItem(name);if(value&&value.trim())return value.replace(/^Bearer\s+/i,'').trim()}catch(_){}}return '';};
   const request=async(url,options={})=>{if(!state.key)throw new Error('请先输入 Management Key');const headers=new Headers(options.headers||{});headers.set('Authorization','Bearer '+state.key);if(options.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');const response=await fetch(url,Object.assign({},options,{headers}));const text=await response.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){data={message:text}}if(!response.ok)throw new Error(data.message||data.error||('请求失败（HTTP '+response.status+'）'));return data;};
   const sha256=async value=>{const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest)).map(item=>item.toString(16).padStart(2,'0')).join('');};
   const loadConfig=async()=>{const data=await request(PLUGIN_CONFIG);return data.api_key_metadata&&typeof data.api_key_metadata==='object'?data.api_key_metadata:{}};

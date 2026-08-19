@@ -81,7 +81,7 @@ plugins:
       priority: 1
 ```
 
-启动后打开官方 Management Center 的插件菜单“API Key 管理器”。页面会优先尝试读取同源官方面板保存的 Management Key；如果读取不到，在页面中手动输入即可。Management Key 仅保留在当前页面内存中。
+启动后打开官方 Management Center 的插件菜单“API Key 管理器”。页面会优先读取同源官方面板在 `cli-proxy-auth` 会话中保存的 Management Key；如果官方面板未勾选记住密码、来源不是同一域名/端口，或浏览器阻止读取本地存储，则在页面中手动输入即可。Management Key 仅保留在当前页面内存中。
 
 ## 已知限制
 
