@@ -16,7 +16,7 @@
 
 - `GET/PUT /v0/management/api-keys`：读取和全量保存 API Key 列表；
 - `GET/PATCH /v0/management/plugins/api-key-manager/config`：读取和保存插件配置；
-- `/v0/resource/plugins/api-key-manager/`：插件页面资源。
+- `/v0/resource/plugins/api-key-manager/index.html`：插件页面资源和菜单入口。
 
 名称/备注使用 API Key 的 SHA-256 作为配置键，配置中不重复保存 API Key 明文：
 

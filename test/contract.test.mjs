@@ -20,6 +20,7 @@ for (const contract of [
   'plugin.reconfigure',
   'management.register',
   'management.handle',
+  'Path:        "/index.html"',
   '/v0/management/api-keys',
   '/v0/management/plugins/api-key-manager/config',
   'api_key_metadata',
