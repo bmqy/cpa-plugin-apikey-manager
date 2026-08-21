@@ -50,7 +50,7 @@ jobs:
           go-version: "1.26.x"
           cache: false
 
-      - name: Build dynamic library and package asset
+      - name: Build dynamic library
         shell: bash
         env:
           GOOS_VALUE: ${{ matrix.goos }}
@@ -64,32 +64,18 @@ jobs:
             exit 1
           fi
 
-          mkdir -p dist/package
-          output="${PLUGIN_ID}.${EXTENSION}"
+          mkdir -p dist
+          output="${PLUGIN_ID}_${version}_${GOOS_VALUE}_${GOARCH_VALUE}.${EXTENSION}"
           CGO_ENABLED=1 GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
             go build -trimpath -buildmode=c-shared \
             -ldflags "-X main.pluginVersion=${version}" \
-            -o "dist/package/${output}" .
-
-          asset="${PLUGIN_ID}_${version}_${GOOS_VALUE}_${GOARCH_VALUE}.zip"
-          python - "$asset" "${output}" <<'PY'
-          import pathlib
-          import sys
-          import zipfile
-
-          asset_name = pathlib.Path(sys.argv[1])
-          library_name = sys.argv[2]
-          library_path = pathlib.Path("dist/package") / library_name
-          with zipfile.ZipFile(pathlib.Path("dist") / asset_name, "w", zipfile.ZIP_DEFLATED) as archive:
-              archive.write(library_path, library_name)
-          PY
-          rm -rf dist/package
+            -o "dist/${output}" .
 
       - name: Upload platform artifact
         uses: actions/upload-artifact@v4
         with:
           name: platform-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.zip
+          path: dist/*
           if-no-files-found: error
           retention-days: 7
 
@@ -110,7 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           cd build-assets
-          sha256sum -- *.zip | sort -k2 > checksums.txt
+          sha256sum -- * | sort -k2 > checksums.txt
           cat checksums.txt
 
       - name: Upload build artifact
