@@ -11,6 +11,10 @@
 - 按名称、备注或 Key 筛选；
 - 默认掩码显示 Key，并支持单条显示/隐藏。
 
+## 界面预览
+
+![API Key 管理器界面预览](https://image.bmqy.net/upload/2026-08/QQ20260821-172754.png)
+
 ## 实现方式
 
 插件只负责页面和名称/备注索引，API Key 的实际增删改查复用宿主的 Management API：
