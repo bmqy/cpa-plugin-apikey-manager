@@ -1,0 +1,122 @@
+name: Manual build plugin artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Plugin version, for example 0.1.8"
+        required: true
+        default: "0.1.7"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PLUGIN_ID: api-key-manager
+  VERSION_INPUT: ${{ inputs.version }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            extension: so
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            extension: dll
+          - runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            extension: dylib
+          - runner: macos-14
+            goos: darwin
+            goarch: arm64
+            extension: dylib
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: false
+
+      - name: Build dynamic library and package asset
+        shell: bash
+        env:
+          GOOS_VALUE: ${{ matrix.goos }}
+          GOARCH_VALUE: ${{ matrix.goarch }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          version="$VERSION_INPUT"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid plugin version: $version" >&2
+            exit 1
+          fi
+
+          mkdir -p dist/package
+          output="${PLUGIN_ID}.${EXTENSION}"
+          CGO_ENABLED=1 GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+            go build -trimpath -buildmode=c-shared \
+            -ldflags "-X main.pluginVersion=${version}" \
+            -o "dist/package/${output}" .
+
+          asset="${PLUGIN_ID}_${version}_${GOOS_VALUE}_${GOARCH_VALUE}.zip"
+          python - "$asset" "${output}" <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          asset_name = pathlib.Path(sys.argv[1])
+          library_name = sys.argv[2]
+          library_path = pathlib.Path("dist/package") / library_name
+          with zipfile.ZipFile(pathlib.Path("dist") / asset_name, "w", zipfile.ZIP_DEFLATED) as archive:
+              archive.write(library_path, library_name)
+          PY
+          rm -rf dist/package
+
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  collect:
+    name: Collect downloadable artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build-assets
+          pattern: platform-*-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build-assets
+          sha256sum -- *.zip | sort -k2 > checksums.txt
+          cat checksums.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-key-manager-manual-${{ inputs.version }}
+          path: build-assets/*
+          if-no-files-found: error
+          retention-days: 7

@@ -34,6 +34,10 @@ plugins:
           remark: "本地开发"
 ```
 
+## 手动构建
+
+在 GitHub Actions 中运行 `Manual build plugin artifacts`，输入版本号后即可构建 Linux、Windows 和 macOS 产物。构建结果会作为 Actions Artifact 提供下载，并保留 7 天；该工作流不会创建 GitHub Release。
+
 ## 构建
 
 需要 Go、cgo 和对应平台的 C 编译器。插件必须编译为动态库：
