@@ -1,11 +1,12 @@
 # CLIProxyAPI API Key 管理器
 
-日期：2026-08-19  
+日期：2026-08-21<br>
 执行者：Codex
 
 这是一个标准 CLIProxyAPI 动态库插件，为官方 Management Center 增加一个独立资源页面，用于：
 
 - 查看、添加、编辑、删除代理服务 API Key；
+- 新增 API Key 时支持自动生成随机 Key；
 - 为 API Key 增加名称和备注；
 - 按名称、备注或 Key 筛选；
 - 默认掩码显示 Key，并支持单条显示/隐藏。
