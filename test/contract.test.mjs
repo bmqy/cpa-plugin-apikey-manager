@@ -46,6 +46,8 @@ assert.equal(
 );
 
 assert.match(html, /request\(API_KEYS\)/);
+assert.match(html, /\.auth-row\{display:grid;grid-template-columns:minmax\(0,1fr\) auto;gap:10px;align-items:stretch\}/);
+assert.match(html, /<div class="auth-row"><input id="management-key"[\s\S]*<button id="connect">连接并加载<\/button><\/div>/);
 assert.match(html, /state\.key=value;try\{await load\(\)/);
 assert.match(html, /navigator\.clipboard&&navigator\.clipboard\.writeText/);
 assert.match(html, /const copyValue=async value=>/);
