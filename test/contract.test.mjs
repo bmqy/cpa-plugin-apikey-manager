@@ -48,6 +48,9 @@ assert.equal(
 assert.match(html, /request\(API_KEYS\)/);
 assert.match(html, /state\.key=value;try\{await load\(\)/);
 assert.match(html, /navigator\.clipboard&&navigator\.clipboard\.writeText/);
+assert.match(html, /const copyValue=async value=>/);
+assert.match(html, /await copyValue\(value\)/);
+assert.match(html, /已生成 API Key，并已复制到剪切板/);
 assert.match(html, /copyKey\(item\.index\)/);
 assert.match(html, /copy,edit,remove/);
 assert.match(html, /crypto\.getRandomValues/);
