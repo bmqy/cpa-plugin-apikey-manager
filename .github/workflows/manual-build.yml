@@ -8,13 +8,21 @@ on:
         required: true
         default: "0.1.7"
         type: string
+  push:
+    branches:
+      - test/**
+    paths:
+      - main.go
+      - go.mod
+      - .github/workflows/manual-build.yml
 
 permissions:
   contents: read
 
 env:
   PLUGIN_ID: api-key-manager
-  VERSION_INPUT: ${{ inputs.version }}
+  # workflow_dispatch 使用输入版本；test 分支等 push 触发时回退到插件源码里的默认版本。
+  VERSION_INPUT: ${{ inputs.version || '0.1.11' }}
 
 jobs:
   build:
@@ -102,7 +110,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: api-key-manager-manual-${{ inputs.version }}
+          name: api-key-manager-manual-${{ env.VERSION_INPUT }}
           path: build-assets/*
           if-no-files-found: error
           retention-days: 7

@@ -56,7 +56,7 @@ const (
 	pluginName          = "API Key 管理器"
 )
 
-var pluginVersion = "0.1.10"
+var pluginVersion = "0.1.11"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -272,7 +272,7 @@ const indexHTML = `<!doctype html>
 <p class="sub">管理 CLIProxyAPI 代理服务认证密钥，并为每个密钥维护名称和备注。</p>
 <section class="card">
   <h2>连接</h2>
-  <div class="auth"><div class="field"><label for="management-key">Management Key</label><div class="auth-row"><input id="management-key" type="password" autocomplete="off" placeholder="输入 CLIProxyAPI 的管理密钥"><button id="connect">连接并加载</button></div><small>会读取同源官方管理面板已记住的会话密钥；本页不会主动持久化你输入的密钥。</small></div></div>
+  <div class="auth"><div class="field"><label for="management-key">Management Key</label><div class="auth-row"><input id="management-key" type="password" autocomplete="off" placeholder="输入 CLIProxyAPI 的管理密钥"><button id="connect">连接并加载</button></div><small>会自动读取同源官方管理面板已记住的登录状态（兼容 enc::v2:: 与旧版 enc::v1:: 存储），刷新或切回本页时会重新读取；本页不会主动持久化你输入的密钥。</small></div></div>
   <div id="status" class="status"></div>
 </section>
 <section class="card">
@@ -292,10 +292,23 @@ const indexHTML = `<!doctype html>
   const $=id=>document.getElementById(id);
   const status=(message,type)=>{const el=$('status');el.textContent=message||'';el.className='status '+(type||'');};
   const AUTH_STORAGE='cli-proxy-auth';
-  const ENC_PREFIX='enc::v1::';
+  const ENC_V2_PREFIX='enc::v2::';
+  const ENC_V1_PREFIX='enc::v1::';
   const STORAGE_SALT='cli-proxy-api-webui::secure-storage';
-  const decodeOfficialStorage=raw=>{if(!raw||!raw.startsWith(ENC_PREFIX))return raw;try{const encoded=atob(raw.slice(ENC_PREFIX.length));const key=new TextEncoder().encode(STORAGE_SALT+'|'+location.host+'|'+navigator.userAgent);const bytes=new Uint8Array(encoded.length);for(let index=0;index<encoded.length;index++)bytes[index]=encoded.charCodeAt(index)^key[index%key.length];return new TextDecoder().decode(bytes)}catch(_){return ''}};
-  const getStoredKey=()=>{try{const raw=localStorage.getItem(AUTH_STORAGE);if(raw){const parsed=JSON.parse(decodeOfficialStorage(raw));const saved=parsed&&typeof parsed==='object'&&parsed.state&&typeof parsed.state==='object'?parsed.state:parsed;const value=saved&&typeof saved.managementKey==='string'?saved.managementKey.trim():'';if(value)return value.replace(/^Bearer\s+/i,'').trim()}}catch(_){}for(const name of ['managementKey','management_key','cpa-management-key']){try{const value=localStorage.getItem(name);if(value&&value.trim())return value.replace(/^Bearer\s+/i,'').trim()}catch(_){}}return '';};
+  const STORAGE_AREAS=['localStorage','sessionStorage'];
+  const KEY_NAMES=[AUTH_STORAGE,'managementKey','management_key','cpa-management-key','cli-proxy-management-key'];
+  // 排除解码后残留控制字符或替换字符的乱码，长度不设限以免误伤自定义的短密钥。
+  const KEY_PATTERN=/^[^\x00-\x1f\x7f\ufffd]+$/;
+  const xorDecode=(body,salt)=>{try{const binary=atob(body);const key=new TextEncoder().encode(salt);const bytes=new Uint8Array(binary.length);for(let index=0;index<binary.length;index++)bytes[index]=binary.charCodeAt(index)^key[index%key.length];return new TextDecoder().decode(bytes)}catch(_){return ''}};
+  // 官方面板 v2 只用 host 混淆；v1 还拼接了 navigator.userAgent，浏览器升级后 UA 变化会解不开，必须两种都兼容。
+  const officialSalts=()=>{const salts=[STORAGE_SALT+'|'+location.host];try{salts.push(STORAGE_SALT+'|'+location.host+'|'+navigator.userAgent)}catch(_){}salts.push(STORAGE_SALT);return salts;};
+  const tryParseJson=text=>{try{return JSON.parse(text)}catch(_){return undefined}};
+  // 用错误的混淆密钥也能解出近似可读的乱码，因此必须整串 JSON 解析成功才认。
+  const decodeOfficialStorage=raw=>{if(!raw)return '';const prefix=raw.startsWith(ENC_V2_PREFIX)?ENC_V2_PREFIX:raw.startsWith(ENC_V1_PREFIX)?ENC_V1_PREFIX:'';if(!prefix)return raw;const body=raw.slice(prefix.length);for(const salt of officialSalts()){const decoded=xorDecode(body,salt).trim();if(decoded&&tryParseJson(decoded)!==undefined)return decoded}return '';};
+  const normalizeKey=value=>{const text=typeof value==='string'?value.trim():'';return text.replace(/^Bearer\s+/i,'').trim();};
+  const findStoredKey=value=>{const seen=new Set();const walk=(node,depth)=>{if(!node||typeof node!=='object'||depth>4||seen.has(node))return '';seen.add(node);for(const name of KEY_NAMES){const found=normalizeKey(node[name]);if(found&&KEY_PATTERN.test(found))return found}for(const child of Object.values(node)){const found=walk(child,depth+1);if(found)return found}return ''};return walk(value,0);};
+  const keyFromPayload=payload=>{if(!payload)return '';const text=payload.trim();if(text.startsWith('{')){try{return findStoredKey(JSON.parse(text))}catch(_){return ''}}if(text.startsWith('"')){try{const parsed=normalizeKey(JSON.parse(text));return KEY_PATTERN.test(parsed)?parsed:''}catch(_){return ''}}return KEY_PATTERN.test(text)?normalizeKey(text):'';};
+  const readStoredKey=()=>{for(const name of KEY_NAMES){for(const area of STORAGE_AREAS){try{const store=window[area];const raw=store&&store.getItem(name);if(!raw)continue;const value=keyFromPayload(decodeOfficialStorage(raw));if(value)return value}catch(_){}}}return '';};
   const request=async(url,options={})=>{if(!state.key)throw new Error('请先输入 Management Key');const headers=new Headers(options.headers||{});headers.set('Authorization','Bearer '+state.key);if(options.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');const response=await fetch(url,Object.assign({},options,{headers}));const text=await response.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){data={message:text}}if(!response.ok)throw new Error(data.message||data.error||('请求失败（HTTP '+response.status+'）'));return data;};
   const sha256=async value=>{const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest)).map(item=>item.toString(16).padStart(2,'0')).join('');};
   const copyValue=async value=>{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(value);return;}const area=document.createElement('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{if(!document.execCommand('copy'))throw new Error('浏览器拒绝复制');}finally{area.remove();}};
@@ -310,14 +323,19 @@ const indexHTML = `<!doctype html>
   const removeKey=async index=>{if(!confirm('确定删除这个 API Key 吗？'))return;try{const oldKey=state.keys[index];const keys=state.keys.filter((_,itemIndex)=>itemIndex!==index);const metadata=Object.assign({},state.metadata);delete metadata[await sha256(oldKey)];await request(API_KEYS,{method:'PUT',body:JSON.stringify(keys)});await saveConfig(metadata);state.keys=keys;render();status('API Key 已删除。','ok');}catch(error){status(error.message,'error');}};
   const copyKey=async index=>{const value=state.keys[index];try{await copyValue(value);status('API Key 已复制。','ok')}catch(error){status('复制失败：'+error.message,'error')}};
   const saveKey=async event=>{event.preventDefault();const value=$('key-value').value.trim();const name=$('key-name').value.trim();const remark=$('key-remark').value.trim();if(!value){status('API Key 不能为空。','error');return;}try{const index=state.editingIndex;const duplicate=state.keys.some((key,itemIndex)=>key===value&&itemIndex!==index);if(duplicate)throw new Error('API Key 已存在。');const keys=state.keys.slice();const metadata=Object.assign({},state.metadata);if(index<0){keys.push(value);metadata[await sha256(value)]={name,remark};}else{const oldKey=keys[index];keys[index]=value;delete metadata[await sha256(oldKey)];metadata[await sha256(value)]={name,remark};}await request(API_KEYS,{method:'PUT',body:JSON.stringify(keys)});await saveConfig(metadata);state.keys=keys;await prepareHashes();closeModal();render();status(index<0?'API Key 已新增。':'API Key 已更新。','ok');}catch(error){status(error.message,'error');}};
+  const adoptStoredKey=()=>{const value=readStoredKey();if(!value)return '';state.key=value;$('management-key').value=value;return value;};
   const connect=async()=>{const value=$('management-key').value.trim();if(!value){status('请输入 Management Key。','error');return;}state.key=value;try{await load();}catch(error){status(error.message,'error');}};
-  $('management-key').value=getStoredKey();$('connect').onclick=connect;$('refresh').onclick=async()=>{try{await load();}catch(error){status(error.message,'error');}};$('add').onclick=()=>openModal(-1);$('generate-key').onclick=generateKey;$('cancel').onclick=closeModal;$('key-form').onsubmit=saveKey;$('search').oninput=render;$('modal-backdrop').onclick=event=>{if(event.target===$('modal-backdrop'))closeModal();};
+  $('management-key').value=readStoredKey();$('connect').onclick=connect;$('refresh').onclick=async()=>{try{await load();}catch(error){status(error.message,'error');}};$('add').onclick=()=>openModal(-1);$('generate-key').onclick=generateKey;$('cancel').onclick=closeModal;$('key-form').onsubmit=saveKey;$('search').oninput=render;$('modal-backdrop').onclick=event=>{if(event.target===$('modal-backdrop'))closeModal();};
   window.__hashCache={};
   const prepareHashes=async()=>{for(const key of state.keys)window.__hashCache[key]=await sha256(key);};
   $('add').onclick=()=>openModal(-1);
   state.metadata={};
-  connectIfStored();
-  async function connectIfStored(){const value=$('management-key').value.trim();if(!value)return;state.key=value;try{await load();}catch(error){status('已读取本地会话，但连接失败：'+error.message,'error');}}
+  // 刷新、切回标签页或官方面板刚写入登录状态时都重新读取，避免仅依赖首屏那一次解析。
+  const resyncStoredKey=async()=>{if(state.key)return;if(!adoptStoredKey())return;try{await load();}catch(error){status('已读取本地登录状态，但连接失败：'+error.message,'error');}};
+  window.addEventListener('focus',()=>{void resyncStoredKey();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void resyncStoredKey();});
+  window.addEventListener('storage',event=>{if(event&&event.key&&KEY_NAMES.indexOf(event.key)>=0)void resyncStoredKey();});
+  resyncStoredKey();
 })();
 </script>
 </body>

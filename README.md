@@ -90,7 +90,14 @@ plugins:
       priority: 1
 ```
 
-启动后打开官方 Management Center 的插件菜单“API Key 管理器”。页面会优先读取同源官方面板在 `cli-proxy-auth` 会话中保存的 Management Key；如果官方面板未勾选记住密码、来源不是同一域名/端口，或浏览器阻止读取本地存储，则在页面中手动输入即可。Management Key 仅保留在当前页面内存中。
+启动后打开官方 Management Center 的插件菜单“API Key 管理器”。页面会自动读取同源官方面板已勾选记住密码时保存的登录状态：
+
+- 兼容官方面板现行的 `enc::v2::` 混淆存储（密钥只由固定盐与 `location.host` 推导），也兼容旧版 `enc::v1::`（额外拼接了 `navigator.userAgent`），因此浏览器升级导致 UA 变化后仍能读取旧会话；
+- 解码结果必须能完整解析为 JSON 才会被采信，避免混淆密钥不匹配时把乱码当成 Management Key 去连接；
+- 同时尝试 `localStorage` 与 `sessionStorage`，并支持旧的独立键名 `managementKey`、`management_key`、`cpa-management-key`、`cli-proxy-management-key`；
+- 打开页面、窗口重新获得焦点、标签页重新可见，或官方面板在其它标签页写入登录状态时都会重新读取。
+
+如果官方面板未勾选记住密码、来源不是同一域名/端口，或浏览器阻止读取本地存储，则在页面中手动输入即可。Management Key 仅保留在当前页面内存中，本插件不会主动持久化你输入的密钥。
 
 ## 已知限制
 
