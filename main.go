@@ -50,10 +50,14 @@ import (
 )
 
 const (
-	abiVersion   uint32 = 1
+	abiVersion    uint32 = 1
 	schemaVersion uint32 = 3
-	pluginID            = "api-key-manager"
-	pluginName          = "API Key 管理器"
+	pluginID             = "api-key-manager"
+	pluginName           = "API Key 管理器"
+	// 宿主以插件文件名（去掉扩展名与 -v<版本> 后缀）作为资源路由 ID，
+	// 因此资源路径必须按请求实际包含的插件实例 ID 匹配，不能假定等于 pluginID。
+	resourceBasePrefix = "/v0/resource/plugins/"
+	dashboardPath      = "/dashboard"
 )
 
 var pluginVersion = "0.1.11"
@@ -215,8 +219,7 @@ func handleManagement(raw []byte) ([]byte, error) {
 	}
 
 	path := strings.TrimSpace(request.Path)
-	resourcePath := "/v0/resource/plugins/" + pluginID + "/dashboard"
-	if path == "/dashboard" || path == resourcePath {
+	if isDashboardPath(path) {
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusOK,
 			Headers:    http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
@@ -228,6 +231,36 @@ func handleManagement(raw []byte) ([]byte, error) {
 		Headers:    http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
 		Body:       []byte("not found"),
 	})
+}
+
+// isDashboardPath reports whether path addresses this plugin's dashboard resource.
+// The host registers resources under its own plugin instance ID, which is derived
+// from the plugin file name (for example api-key-manager_0.1.11_linux_amd64), so
+// accept any instance ID segment as long as the leaf path matches.
+func isDashboardPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	if path == pluginID+dashboardPath || path == dashboardPath {
+		return true
+	}
+	for _, prefix := range []string{resourceBasePrefix, "/plugins/"} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(path, prefix)
+		instanceID, leaf, ok := strings.Cut(rest, "/")
+		if !ok || strings.TrimSpace(instanceID) == "" {
+			continue
+		}
+		if strings.Contains(instanceID, "..") || strings.ContainsAny(instanceID, " \t\r\n\\") {
+			continue
+		}
+		if strings.Trim(leaf, "/") == strings.TrimPrefix(dashboardPath, "/") {
+			return true
+		}
+	}
+	return false
 }
 
 func okEnvelope(result interface{}) ([]byte, error) {
@@ -286,7 +319,12 @@ const indexHTML = `<!doctype html>
 <script>
 (function(){
   'use strict';
-  const PLUGIN_CONFIG='/v0/management/plugins/api-key-manager/config';
+  // 宿主以插件实例 ID（插件文件名去掉扩展名）作为资源与管理路由 ID，因此资源页路径必须按实际实例 ID 匹配；
+  // 而名称/备注配置写回稳定的逻辑 ID，避免升级换文件名后丢失已保存的元数据。
+  const METADATA_PLUGIN_ID='api-key-manager';
+  const pluginInstanceID=()=>{try{const parts=location.pathname.split('/').filter(Boolean);const index=parts.indexOf('plugins');const value=index>=0?parts[index+1]:'';return value&&value!=='dashboard'?value:''}catch(_){return ''}};
+  const configPath=id=>'/v0/management/plugins/'+encodeURIComponent(id)+'/config';
+  const configCandidates=()=>{const ids=[METADATA_PLUGIN_ID];const instanceID=pluginInstanceID();if(instanceID&&ids.indexOf(instanceID)<0)ids.push(instanceID);return ids.map(configPath);};
   const API_KEYS='/v0/management/api-keys';
   const state={key:'',keys:[],metadata:{},editingIndex:-1,visible:{}};
   const $=id=>document.getElementById(id);
@@ -313,8 +351,9 @@ const indexHTML = `<!doctype html>
   const sha256=async value=>{const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest)).map(item=>item.toString(16).padStart(2,'0')).join('');};
   const copyValue=async value=>{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(value);return;}const area=document.createElement('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{if(!document.execCommand('copy'))throw new Error('浏览器拒绝复制');}finally{area.remove();}};
   const generateKey=async()=>{try{if(typeof crypto==='undefined'||typeof crypto.getRandomValues!=='function')throw new Error('当前浏览器不支持自动生成 API Key');const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);const value='sk-'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');$('key-value').value=value;$('key-value').focus();$('key-value').select();try{await copyValue(value);status('已生成 API Key，并已复制到剪切板，请填写名称和备注后保存。','ok');}catch(error){status('已生成 API Key，但复制失败：'+error.message,'error');}}catch(error){status('生成失败：'+error.message,'error')}};
-  const loadConfig=async()=>{const data=await request(PLUGIN_CONFIG);return data.api_key_metadata&&typeof data.api_key_metadata==='object'?data.api_key_metadata:{}};
-  const saveConfig=async metadata=>{await request(PLUGIN_CONFIG,{method:'PATCH',body:JSON.stringify({api_key_metadata:metadata})});state.metadata=metadata;};
+  // 读取时依次尝试稳定 ID 与当前实例 ID，写回固定使用稳定 ID。
+  const loadConfig=async()=>{let lastError=null;for(const url of configCandidates()){try{const data=await request(url);return data&&data.api_key_metadata&&typeof data.api_key_metadata==='object'?data.api_key_metadata:{}}catch(error){lastError=error}}throw lastError||new Error('无法读取插件配置');};
+  const saveConfig=async metadata=>{await request(configPath(METADATA_PLUGIN_ID),{method:'PATCH',body:JSON.stringify({api_key_metadata:metadata})});state.metadata=metadata;};
   const load=async()=>{status('正在加载…');const [keyData,metadata]=await Promise.all([request(API_KEYS),loadConfig()]);if(!Array.isArray(keyData['api-keys']))throw new Error('宿主返回的 api-keys 不是字符串数组');state.keys=keyData['api-keys'];state.metadata=metadata;await prepareHashes();render();status('已连接，最后更新：'+new Date().toLocaleTimeString(),'ok');};
   const mask=(value,index)=>state.visible[index]?value:(value.length>8?value.slice(0,4)+'••••'+value.slice(-4):'••••••••');
   const render=()=>{const filter=$('search').value.trim().toLowerCase();const rows=$('rows');rows.textContent='';const items=state.keys.map((key,index)=>({key,index,meta:state.metadata[window.__hashCache[key]||'']||{}})).filter(item=>{const text=(item.key+' '+(item.meta.name||'')+' '+(item.meta.remark||'')).toLowerCase();return !filter||text.includes(filter)});$('count').textContent='共 '+state.keys.length+' 个，当前显示 '+items.length+' 个';if(!items.length){const row=document.createElement('tr');const cell=document.createElement('td');cell.colSpan=4;cell.className='empty';cell.textContent=state.keys.length?'没有匹配项':'暂无 API Key';row.appendChild(cell);rows.appendChild(row);return;}items.forEach(item=>{const row=document.createElement('tr');const keyCell=document.createElement('td');const keyCode=document.createElement('span');keyCode.className='key';keyCode.textContent=mask(item.key,item.index);keyCell.appendChild(keyCode);const toggle=document.createElement('button');toggle.className='link';toggle.textContent=state.visible[item.index]?'隐藏':'显示';toggle.onclick=()=>{state.visible[item.index]=!state.visible[item.index];render();};keyCell.appendChild(toggle);const name=document.createElement('td');name.textContent=item.meta.name||'—';const remark=document.createElement('td');remark.textContent=item.meta.remark||'—';const actions=document.createElement('td');actions.className='row-actions';const copy=document.createElement('button');copy.className='secondary';copy.textContent='复制';copy.onclick=()=>copyKey(item.index);const edit=document.createElement('button');edit.className='secondary';edit.textContent='编辑';edit.onclick=()=>openModal(item.index);const remove=document.createElement('button');remove.className='danger';remove.textContent='删除';remove.onclick=()=>removeKey(item.index);actions.append(copy,edit,remove);row.append(keyCell,name,remark,actions);rows.appendChild(row);});};
